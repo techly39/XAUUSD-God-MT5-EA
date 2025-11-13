@@ -46,7 +46,7 @@ input double ATR_Mult_SL_Range = 1.20; // Sweep reversal SL slightly tighter
 
 // ================== EXECUTION GATES ==================
 input int    Min_ATR_Points     = 200; // Require minimum ATR (M15) to avoid dead sessions
-input int    Max_Spread_Points  = 40;  // Cap poor liquidity; 30–40 OK for gold scalping
+input int    Max_Spread_Points  = 500; // FIXED: Was 40, now 500 for XAUUSD volatility
 
 // ================== MANAGEMENT (BE / TRAIL / PARTIAL) ==================
 input int    Trail_Mode             = 2;    // 0=Off, 1=Fixed step, 2=ATR
@@ -83,3 +83,5 @@ input bool   Only_New_Bar = true;
 input int    Order_Type   = 0; // 0=Market, 1=Pending
 
 #endif // INC_CONFIG_INPUTS_MQH
+
+
