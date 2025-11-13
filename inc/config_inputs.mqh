@@ -5,7 +5,7 @@
 input int    EMA_Trend_Period      = 200;  // Higher-timeframe trend bias (structural)
 input int    EMA_Intraday_Period   = 50;   // Intraday bias (M15)
 input int    ADX_Period            = 14;   // Standard ADX length
-input double ADX_Trend_Threshold   = 25.0; // Trend gate threshold (trend mode if >= 25)
+input double ADX_Trend_Threshold   = 35.0; // Trend gate threshold (trend mode if >= 25)
 input int    RSI_Period            = 14;   // Momentum confirm / exhaustion
 input int    RSI_Buy_Threshold     = 28;   // Aggressive but realistic for M15
 input int    RSI_Sell_Threshold    = 72;   // Aggressive but realistic for M15
@@ -14,10 +14,10 @@ input int    ATR_Period            = 14;   // Volatility baseline (M15)
 
 // ================== BREAKOUT ENGINE (DONCHIAN-STYLE, M15) ==================
 input int    Breakout_Lookback          = 20;    // Recent high/low window (20 x 15min ≈ 5h)
-input int    Breakout_CloseBeyond_Points= 30;    // Close must be beyond channel (0.3x ATR placeholder)
-input int    Pending_Offset_Points      = 20;    // Stop order offset (0.2x ATR placeholder)
-input bool   Breakout_Use_ADX_Filter    = true;  // Require ADX >= ADX_Min_Trend
-input bool   Breakout_Use_Volume_Filter = true;  // Require volume spike vs MA
+input int    Breakout_CloseBeyond_Points= 10;    // Close must be beyond channel (0.3x ATR placeholder)
+input int    Pending_Offset_Points      = 10;    // Stop order offset (0.2x ATR placeholder)
+input bool   Breakout_Use_ADX_Filter    = false;  // Require ADX >= ADX_Min_Trend
+input bool   Breakout_Use_Volume_Filter = false;  // Require volume spike vs MA
 input int    Vol_MA_Period              = 20;    // Tick-volume baseline (20 bars ≈ 5h)
 input double Vol_Min_Ratio              = 1.5;   // Breakout bar >= 150% vol-MA
 
@@ -35,9 +35,9 @@ input int    Session_Start_Hour  = 7;   // e.g. 07:00 server (pre-London open)
 input int    Session_End_Hour    = 18;  // e.g. 18:00 server (NY overlap)
 
 // ================== RISK / SIZING ==================
-input int    Risk_Mode                  = 1;    // 0=Fixed lot, 1=Percent risk
+input int    Risk_Mode                  = 0;    // 0=Fixed lot, 1=Percent risk -- MODIFIED FOR TEST (ORIGINAL = 1)
 input double Risk_Percent               = 2.0;  // Per-trade risk on account balance
-input double Fixed_Lot                  = 0.10; // Used only if Risk_FixedLot
+input double Fixed_Lot                  = 0.01; // Used only if Risk_FixedLot-- MODIFIED FOR TEST (ORIGINAL = 0.10)
 input double Max_Daily_Drawdown_Percent = 5.0;  // Max daily drawdown
 
 // ================== STOPS / TARGETS (M15 GOLD) ==================
@@ -45,8 +45,8 @@ input double ATR_Mult_SL_Trend = 1.50; // Trend breakout SL ≈ 1.5 x ATR(14)
 input double ATR_Mult_SL_Range = 1.20; // Sweep reversal SL slightly tighter
 
 // ================== EXECUTION GATES ==================
-input int    Min_ATR_Points     = 200; // Require minimum ATR (M15) to avoid dead sessions
-input int    Max_Spread_Points  = 500; // FIXED: Was 40, now 500 for XAUUSD volatility
+input int    Min_ATR_Points     = 100; // Require minimum ATR (M15) to avoid dead sessions
+input int    Max_Spread_Points  = 1500; // FIXED: Was 40, now 500 for XAUUSD volatility
 
 // ================== MANAGEMENT (BE / TRAIL / PARTIAL) ==================
 input int    Trail_Mode             = 2;    // 0=Off, 1=Fixed step, 2=ATR
@@ -83,5 +83,7 @@ input bool   Only_New_Bar = true;
 input int    Order_Type   = 0; // 0=Market, 1=Pending
 
 #endif // INC_CONFIG_INPUTS_MQH
+
+
 
 
