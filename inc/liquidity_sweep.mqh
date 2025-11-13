@@ -99,11 +99,12 @@ Signal ScanAndSignal_LiquiditySweep()
    {
       sl_level = MathMin(l, box_low) - sl_price_dist;
       
-      if(TP_Mode == 1 && TP_Fixed_Points > 0)
+      // FIXED: Use enum names instead of integers
+      if(TP_Mode == TP_FIXED && TP_Fixed_Points > 0)
       {
          tp = entry + (TP_Fixed_Points * point);
       }
-      else if(TP_Mode == 2 && RR_Target > 0.0)
+      else if(TP_Mode == TP_RR && RR_Target > 0.0)
       {
          tp = entry + (RR_Target * sl_points * point);
       }
@@ -112,11 +113,12 @@ Signal ScanAndSignal_LiquiditySweep()
    {
       sl_level = MathMax(h, box_high) + sl_price_dist;
       
-      if(TP_Mode == 1 && TP_Fixed_Points > 0)
+      // FIXED: Use enum names instead of integers
+      if(TP_Mode == TP_FIXED && TP_Fixed_Points > 0)
       {
          tp = entry - (TP_Fixed_Points * point);
       }
-      else if(TP_Mode == 2 && RR_Target > 0.0)
+      else if(TP_Mode == TP_RR && RR_Target > 0.0)
       {
          tp = entry - (RR_Target * sl_points * point);
       }
