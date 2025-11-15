@@ -161,7 +161,25 @@ void OnTick()
     return;
   }
 
-  double lot = ComputeLot((sig.entry > 0.0 ? sig.entry : 0.0), sig.sl);
+  // FIXED: Get current market price for lot calculation
+  MqlTick tick;
+  if(!SymbolInfoTick(_Symbol, tick))
+  {
+    LogEvent("TRADE", "tick fail");
+    return;
+  }
+
+  // Use entry price for pending orders, current price for market orders
+  double ref_price = (sig.entry > 0.0) ? sig.entry : ((sig.dir == DIR_LONG) ? tick.ask : tick.bid);
+  
+  // FIXED: Validate signal SL before lot calculation
+  if(sig.sl <= 0.0 || sig.sl == EMPTY_VALUE)
+  {
+    LogError("TRADE", "Invalid SL=" + DoubleToString(sig.sl, 5), 0);
+    return;
+  }
+
+  double lot = ComputeLot(ref_price, sig.sl);
   if(lot <= 0.0) 
   { 
     LogEvent("TRADE","lot=0; skip"); 
@@ -191,3 +209,5 @@ void OnTick()
     LogError("TRADE","send failed", GetLastError());
 }
 //+------------------------------------------------------------------+
+
+
