@@ -11,6 +11,7 @@
 #include "constants.mqh"
 #include "indicators.mqh"
 #include "filters.mqh"
+#include "logging.mqh"
 
 //+------------------------------------------------------------------+
 //| ScanAndSignal_Breakout                                           |
@@ -27,7 +28,7 @@ Signal ScanAndSignal_Breakout()
    sig.tp = 0.0;
    sig.reason = "";
 
-   // 1) Read last CLOSED bar (index 1) - explicit OHLC
+   // 1) Read last CLOSED bar (index 1)
    double o1 = iOpen(_Symbol, PERIOD_CURRENT, 1);
    double h1 = iHigh(_Symbol, PERIOD_CURRENT, 1);
    double l1 = iLow(_Symbol, PERIOD_CURRENT, 1);
@@ -36,19 +37,21 @@ Signal ScanAndSignal_Breakout()
    if(o1 == 0.0 || o1 == EMPTY_VALUE || h1 == 0.0 || h1 == EMPTY_VALUE ||
       l1 == 0.0 || l1 == EMPTY_VALUE || c1 == 0.0 || c1 == EMPTY_VALUE)
    {
+      LogEvent("BO", "Invalid bar data");
       return sig;
    }
 
-   // 2) EMA trend bias (closed bar only)
+   // 2) EMA trend bias
    double ema1 = EMA(1);
    if(ema1 == EMPTY_VALUE)
    {
+      LogEvent("BO", "Invalid EMA");
       return sig;
    }
    
-   // Equal-bias case: no trade
    if(c1 == ema1)
    {
+      LogEvent("BO", "Close = EMA, no bias");
       return sig;
    }
    
@@ -58,22 +61,25 @@ Signal ScanAndSignal_Breakout()
    else if(c1 < ema1)
       bias = DIR_SHORT;
 
-   // 3) Determine breakout levels from closed bars [1 .. Breakout_Lookback]
+   LogEvent("BO", "Bias=" + (bias == DIR_LONG ? "LONG" : "SHORT") + " C=" + DoubleToString(c1, 5) + " EMA=" + DoubleToString(ema1, 5));
+
+   // 3) Determine breakout levels
    if(Breakout_Lookback <= 1)
    {
+      LogEvent("BO", "Lookback too small");
       return sig;
    }
    
    int bars_total = Bars(_Symbol, PERIOD_CURRENT);
    if(bars_total <= Breakout_Lookback)
    {
+      LogEvent("BO", "Not enough bars");
       return sig;
    }
 
    double recent_high = -DBL_MAX;
    double recent_low = DBL_MAX;
    
-   // Loop strictly on closed bars: [1 .. Breakout_Lookback]
    for(int i = 1; i <= Breakout_Lookback; i++)
    {
       double hi = iHigh(_Symbol, PERIOD_CURRENT, i);
@@ -81,43 +87,55 @@ Signal ScanAndSignal_Breakout()
       
       if(hi == 0.0 || hi == EMPTY_VALUE || lo == 0.0 || lo == EMPTY_VALUE)
       {
+         LogEvent("BO", "Invalid data at bar " + IntegerToString(i));
          return sig;
       }
       
-      if(hi > recent_high)
-         recent_high = hi;
-      if(lo < recent_low)
-         recent_low = lo;
+      if(hi > recent_high) recent_high = hi;
+      if(lo < recent_low) recent_low = lo;
    }
    
    if(recent_high <= recent_low)
    {
+      LogEvent("BO", "Invalid range H<L");
       return sig;
    }
 
-   // 4) Close-beyond buffer and pending offset
    double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   if(point <= 0.0)
-   {
-      return sig;
-   }
+   if(point <= 0.0) return sig;
    
+   LogEvent("BO", "Range: H=" + DoubleToString(recent_high, 5) + " L=" + DoubleToString(recent_low, 5));
+
+   // 4) Check breakout
    double close_beyond = Breakout_CloseBeyond_Points * point;
    double pending_offset = Pending_Offset_Points * point;
 
-   // 5) Breakout detection using CLOSED bar (index 1)
    bool is_long_breakout = false;
    bool is_short_breakout = false;
    
    if(bias == DIR_LONG)
    {
       if(c1 >= (recent_high + close_beyond))
+      {
          is_long_breakout = true;
+         LogEvent("BO", "LONG breakout: C=" + DoubleToString(c1, 5) + " >= H+" + IntegerToString(Breakout_CloseBeyond_Points) + "pts");
+      }
+      else
+      {
+         LogEvent("BO", "No breakout: C=" + DoubleToString(c1, 5) + " < " + DoubleToString(recent_high + close_beyond, 5));
+      }
    }
    else if(bias == DIR_SHORT)
    {
       if(c1 <= (recent_low - close_beyond))
+      {
          is_short_breakout = true;
+         LogEvent("BO", "SHORT breakout: C=" + DoubleToString(c1, 5) + " <= L-" + IntegerToString(Breakout_CloseBeyond_Points) + "pts");
+      }
+      else
+      {
+         LogEvent("BO", "No breakout: C=" + DoubleToString(c1, 5) + " > " + DoubleToString(recent_low - close_beyond, 5));
+      }
    }
    
    if(!is_long_breakout && !is_short_breakout)
@@ -125,45 +143,32 @@ Signal ScanAndSignal_Breakout()
       return sig;
    }
 
-   // 6) Optional volume confirmation --- COMENTED OUT FOR TESTING
-//   if(Vol_MA_Period > 0 && Vol_Min_Ratio > 0.0)
-//   {
-//      if(!VolumeConfirm())
-//      {
-//         // return sig;
-//      }
-//   }
-
-   // 7) ATR-based SL sizing with MIN_SL_POINTS baseline
+   // 5) ATR-based SL
    double atr1 = ATR(1);
    if(atr1 == EMPTY_VALUE || atr1 <= 0.0)
    {
+      LogEvent("BO", "Invalid ATR");
       return sig;
    }
    
-   // ATR -> points conversion
    double atr_points = atr1 / point;
    int sl_points = (int)MathRound(ATR_Mult_SL_Trend * atr_points);
-   // MIN_SL_POINTS baseline
    sl_points = (int)MathMax((double)MIN_SL_POINTS, (double)sl_points);
    double sl_price_dist = sl_points * point;
 
-   // 8) Build entry (pending stop level), SL, TP
+   LogEvent("BO", "ATR=" + DoubleToString(atr1, 2) + " SL_pts=" + IntegerToString(sl_points));
+
+   // 6) Build signal
    if(is_long_breakout)
    {
-      // Entry = pending buy stop level
       double entry = recent_high + pending_offset;
       double sl = entry - sl_price_dist;
       double tp = 0.0;
       
       if(TP_Mode == TP_FIXED && TP_Fixed_Points > 0)
-      {
          tp = entry + (TP_Fixed_Points * point);
-      }
       else if(TP_Mode == TP_RR && RR_Target > 0.0)
-      {
          tp = entry + (RR_Target * sl_points * point);
-      }
       
       sig.valid = true;
       sig.dir = DIR_LONG;
@@ -171,23 +176,20 @@ Signal ScanAndSignal_Breakout()
       sig.sl = sl;
       sig.tp = tp;
       sig.reason = REASON_TREND_BO;
+      
+      LogEvent("BO", "✅ LONG signal: Entry=" + DoubleToString(entry, 5) + " SL=" + DoubleToString(sl, 5) + " TP=" + DoubleToString(tp, 5));
       return sig;
    }
    else if(is_short_breakout)
    {
-      // Entry = pending sell stop level
       double entry = recent_low - pending_offset;
       double sl = entry + sl_price_dist;
       double tp = 0.0;
       
       if(TP_Mode == TP_FIXED && TP_Fixed_Points > 0)
-      {
          tp = entry - (TP_Fixed_Points * point);
-      }
       else if(TP_Mode == TP_RR && RR_Target > 0.0)
-      {
          tp = entry - (RR_Target * sl_points * point);
-      }
       
       sig.valid = true;
       sig.dir = DIR_SHORT;
@@ -195,6 +197,8 @@ Signal ScanAndSignal_Breakout()
       sig.sl = sl;
       sig.tp = tp;
       sig.reason = REASON_TREND_BO;
+      
+      LogEvent("BO", "✅ SHORT signal: Entry=" + DoubleToString(entry, 5) + " SL=" + DoubleToString(sl, 5) + " TP=" + DoubleToString(tp, 5));
       return sig;
    }
 
@@ -202,3 +206,4 @@ Signal ScanAndSignal_Breakout()
 }
 
 #endif // INC_BREAKOUT_MQH
+
