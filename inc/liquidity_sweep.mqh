@@ -1,87 +1,142 @@
-#ifndef INC_CONFIG_INPUTS_MQH
-#define INC_CONFIG_INPUTS_MQH
+//+------------------------------------------------------------------+
+//|                                              liquidity_sweep.mqh |
+//|                                         XAUUSD-GOD Expert Advisor |
+//+------------------------------------------------------------------+
+#ifndef INC_LIQUIDITY_SWEEP_MQH
+#define INC_LIQUIDITY_SWEEP_MQH
 
-// ================== CORE INDICATORS (M15 SCALPING) ==================
-input int    EMA_Trend_Period      = 200;  // Higher-timeframe trend bias (structural)
-input int    EMA_Intraday_Period   = 50;   // Intraday bias (M15)
-input int    ADX_Period            = 14;   // Standard ADX length
-input double ADX_Trend_Threshold   = 35.0; // Trend gate threshold (trend mode if >= 25)
-input int    RSI_Period            = 14;   // Momentum confirm / exhaustion
-input int    RSI_Buy_Threshold     = 28;   // Aggressive but realistic for M15
-input int    RSI_Sell_Threshold    = 72;   // Aggressive but realistic for M15
-input int    RSI_Exit              = 50;   // RSI exit level
-input int    ATR_Period            = 14;   // Volatility baseline (M15)
+#include "types.mqh"
+#include "config_inputs.mqh"
+#include "constants.mqh"
+#include "indicators.mqh"
+#include "range_detector.mqh"
+#include "filters.mqh"
 
-// ================== BREAKOUT ENGINE (DONCHIAN-STYLE, M15) ==================
-input int    Breakout_Lookback          = 20;    // Recent high/low window (20 x 15min ≈ 5h)
-input int    Breakout_CloseBeyond_Points= 10;    // Close must be beyond channel (0.3x ATR placeholder)
-input int    Pending_Offset_Points      = 10;    // Stop order offset (0.2x ATR placeholder)
-input bool   Breakout_Use_ADX_Filter    = false;  // Require ADX >= ADX_Min_Trend
-input bool   Breakout_Use_Volume_Filter = false;  // Require volume spike vs MA
-input int    Vol_MA_Period              = 20;    // Tick-volume baseline (20 bars ≈ 5h)
-input double Vol_Min_Ratio              = 1.5;   // Breakout bar >= 150% vol-MA
+//+------------------------------------------------------------------+
+//| Scan and generate liquidity sweep signal                         |
+//+------------------------------------------------------------------+
+Signal ScanAndSignal_LiquiditySweep()
+{
+   double box_high = 0.0;
+   double box_low = 0.0;
+   
+   if(!BuildRangeBox(Range_Lookback_Bars, box_high, box_low))
+   {
+      return Signal();
+   }
+   
+   double o = iOpen(_Symbol, PERIOD_CURRENT, 1);
+   double h = iHigh(_Symbol, PERIOD_CURRENT, 1);
+   double l = iLow(_Symbol, PERIOD_CURRENT, 1);
+   double c = iClose(_Symbol, PERIOD_CURRENT, 1);
+   
+   if(o == 0.0 || o == EMPTY_VALUE || 
+      h == 0.0 || h == EMPTY_VALUE || 
+      l == 0.0 || l == EMPTY_VALUE || 
+      c == 0.0 || c == EMPTY_VALUE)
+   {
+      return Signal();
+   }
+   
+   double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   if(point == 0.0)
+   {
+      return Signal();
+   }
+   
+   double sweep_hi = box_high + (Sweep_Buffer_Points * point);
+   double sweep_lo = box_low - (Sweep_Buffer_Points * point);
+   
+   Direction dir = DIR_NONE;
+   bool is_short_candidate = (h > sweep_hi) && (c < box_high);
+   bool is_long_candidate = (l < sweep_lo) && (c > box_low);
+   
+   if(is_short_candidate && !is_long_candidate)
+   {
+      dir = DIR_SHORT;
+   }
+   else if(is_long_candidate && !is_short_candidate)
+   {
+      dir = DIR_LONG;
+   }
+   else
+   {
+      return Signal();
+   }
+   
+   if(RSI_Buy_Threshold > 0 || RSI_Sell_Threshold > 0)
+   {
+      if(!RSIConfirm(dir))
+      {
+         return Signal();
+      }
+   }
+   
+   if(Vol_MA_Period > 0 && Vol_Min_Ratio > 0.0)
+   {
+      if(!VolumeConfirm())
+      {
+         return Signal();
+      }
+   }
+   
+   double atr = ATR(1);
+   if(atr == EMPTY_VALUE || atr == 0.0)
+   {
+      return Signal();
+   }
+   
+   double atr_points = atr / point;
+   int sl_points = (int)MathRound(ATR_Mult_SL_Range * atr_points);
+   sl_points = (int)MathMax((double)MIN_SL_POINTS, (double)sl_points);
+   double sl_price_dist = sl_points * point;
+   
+   double entry = c;
+   double sl_level = 0.0;
+   double tp = 0.0;
+   
+   if(dir == DIR_LONG)
+   {
+      sl_level = MathMin(l, box_low) - sl_price_dist;
+      
+      // FIXED: Use enum names instead of integers
+      if(TP_Mode == TP_FIXED && TP_Fixed_Points > 0)
+      {
+         tp = entry + (TP_Fixed_Points * point);
+      }
+      else if(TP_Mode == TP_RR && RR_Target > 0.0)
+      {
+         tp = entry + (RR_Target * sl_points * point);
+      }
+   }
+   else if(dir == DIR_SHORT)
+   {
+      sl_level = MathMax(h, box_high) + sl_price_dist;
+      
+      // FIXED: Use enum names instead of integers
+      if(TP_Mode == TP_FIXED && TP_Fixed_Points > 0)
+      {
+         tp = entry - (TP_Fixed_Points * point);
+      }
+      else if(TP_Mode == TP_RR && RR_Target > 0.0)
+      {
+         tp = entry - (RR_Target * sl_points * point);
+      }
+   }
+   
+   Signal s;
+   s.valid = true;
+   s.dir = dir;
+   s.entry = entry;
+   s.sl = sl_level;
+   s.tp = tp;
+   s.reason = REASON_LIQ_SWEEP;
+   
+   return s;
+}
 
-// ================== LIQUIDITY-SWEEP ENGINE (RANGE REVERSAL, M15) ==================
-input int    Range_Lookback_Bars   = 12;   // ~3h range on M15 (good for Asian box / pre-London)
-input int    Range_Min_Width_Points= 100;  // Minimum range width
-input int    Range_Max_Width_Points= 800;  // Maximum range width
-input int    Sweep_Buffer_Points   = 25;   // Wick must pierce prior H/L (0.25x ATR placeholder)
-input int    Sweep_Reentry_Confirm_Bars = 2; // Bars to confirm reversal
-input bool   Sweep_Use_RSI_Confirm = true; // RSI(14) <28 long / >72 short
+#endif // INC_LIQUIDITY_SWEEP_MQH
 
-// ================== SESSION FILTERS (OPTIONAL BUT RECOMMENDED) ==================
-input bool   Use_Session_Filter = true;
-input int    Session_Start_Hour  = 7;   // e.g. 07:00 server (pre-London open)
-input int    Session_End_Hour    = 18;  // e.g. 18:00 server (NY overlap)
 
-// ================== RISK / SIZING ==================
-input int    Risk_Mode                  = 0;    // 0=Fixed lot, 1=Percent risk -- MODIFIED FOR TEST (ORIGINAL = 1)
-input double Risk_Percent               = 2.0;  // Per-trade risk on account balance
-input double Fixed_Lot                  = 0.01; // Used only if Risk_FixedLot-- MODIFIED FOR TEST (ORIGINAL = 0.10)
-input double Max_Daily_Drawdown_Percent = 5.0;  // Max daily drawdown
-
-// ================== STOPS / TARGETS (M15 GOLD) ==================
-input double ATR_Mult_SL_Trend = 1.50; // Trend breakout SL ≈ 1.5 x ATR(14)
-input double ATR_Mult_SL_Range = 1.20; // Sweep reversal SL slightly tighter
-
-// ================== EXECUTION GATES ==================
-input int    Min_ATR_Points     = 100; // Require minimum ATR (M15) to avoid dead sessions
-input int    Max_Spread_Points  = 1500; // FIXED: Was 40, now 500 for XAUUSD volatility
-
-// ================== MANAGEMENT (BE / TRAIL / PARTIAL) ==================
-input int    Trail_Mode             = 2;    // 0=Off, 1=Fixed step, 2=ATR
-input int    Trail_Start_Points     = 150;  // Start trailing
-input int    Trail_Step_Points      = 120;  // Used only if Trail_Mode=1
-input double Trail_ATR_Mult         = 1.00; // 1x ATR trailing stop for Mode=2
-
-input int    Move_BE_After_Points   = 150;  // Move SL to BE after +15 pips
-input bool   Use_Partials           = true;
-input double Partial1_Ratio         = 0.50; // Close 50% at first target
-input int    Partial1_Target_Points = 200;  // At +20 pips do partial + lock in BE
-
-// ================== PROFIT TARGETS ==================
-input int    TP_Mode         = 1;   // 0=Fixed, 1=RR ratio
-input int    TP_Fixed_Points = 200; // Fixed TP
-input double RR_Target       = 1.5; // Risk:Reward ratio
-
-// ================== HOUSEKEEPING ==================
-input int    Magic_Offset          = 1;
-input int    Max_Slippage_Points   = 50;
-input int    Order_Expiration_Min  = 30;
-input string Order_Comment         = "XAUUSD-GOD-M15";
-
-// ================== TRADING SCHEDULE ==================
-input bool   Trading_Day_Mon = true;
-input bool   Trading_Day_Tue = true;
-input bool   Trading_Day_Wed = true;
-input bool   Trading_Day_Thu = true;
-input bool   Trading_Day_Fri = true;
-input string Friday_CloseTime = "21:00";
-
-// ================== MISC ==================
-input bool   Only_New_Bar = true;
-input int    Order_Type   = 0; // 0=Market, 1=Pending
-
-#endif // INC_CONFIG_INPUTS_MQH
 
 
