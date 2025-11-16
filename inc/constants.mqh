@@ -3,7 +3,7 @@
 
 #define EA_VERSION "XAUUSD-GOD 1.0"
 #define SYMBOL_TARGET "XAUUSD"
-#define TF_TARGET PERIOD_M5
+#define TF_TARGET PERIOD_M15
 
 const long MAGIC_BASE = 66050001;
 
@@ -12,5 +12,6 @@ const long MAGIC_BASE = 66050001;
 
 const int MIN_SL_POINTS = 10;
 const int MIN_TP_POINTS = 10;
+
 
 #endif // INC_CONSTANTS_MQH
