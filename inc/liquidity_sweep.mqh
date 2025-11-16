@@ -167,8 +167,3 @@ Signal ScanAndSignal_LiquiditySweep()
 }
 
 #endif // INC_LIQUIDITY_SWEEP_MQH
-
-
-
-
-
