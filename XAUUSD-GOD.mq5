@@ -1,11 +1,11 @@
 //+------------------------------------------------------------------+
 //|                                                  XAUUSD-GOD.mq5 |
 //|                                      XAUUSD Algorithmic Trading |
-//|                                                                  |
+//|                                                   FIXED VERSION  |
 //+------------------------------------------------------------------+
 #property copyright "XAUUSD-GOD"
 #property link      ""
-#property version   "1.00"
+#property version   "1.01"
 #property strict
 
 #include <inc/types.mqh>
@@ -26,16 +26,16 @@
 
 input group "XAUUSD-GOD Settings"
 
-datetime g_lastBar_M5 = 0;
+datetime g_lastBar_M15 = 0;  // FIXED: Changed from M5 to M15
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
 //+------------------------------------------------------------------+
 int OnInit()
 {
-  LogInit("XAUUSD-GOD");
+  LogInit("XAUUSD-GOD-M15");
   const string sym = _Symbol;
-  const ENUM_TIMEFRAMES tf = PERIOD_CURRENT;
+  const ENUM_TIMEFRAMES tf = PERIOD_M15;  // FIXED: Explicitly M15
 
   if(!InitIndicators(sym, tf))
   {
@@ -43,16 +43,15 @@ int OnInit()
     return(INIT_FAILED);
   }
 
-  // Verify trading is allowed
   if(!SymbolInfoInteger(sym, SYMBOL_TRADE_MODE)) 
   { 
     LogError("INIT","Trading not allowed for symbol", GetLastError()); 
   }
 
-  datetime t0 = iTime(sym, PERIOD_M5, 0);
-  if(t0 > 0) g_lastBar_M5 = t0;
+  datetime t0 = iTime(sym, PERIOD_M15, 0);  // FIXED: M15
+  if(t0 > 0) g_lastBar_M15 = t0;
 
-  LogEvent("INIT","OK");
+  LogEvent("INIT","OK - M15 Timeframe");
   return(INIT_SUCCEEDED);
 }
 
@@ -88,6 +87,8 @@ bool BuildSignal(Signal &out_sig)
   out_sig.reason = "";
 
   Regime r = DetectRegime();
+  LogEvent("SIGNAL", "Regime=" + (r == REGIME_RANGE ? "RANGE" : "TREND"));
+  
   if(r == REGIME_RANGE)
   {
     Signal s = ScanAndSignal_LiquiditySweep();
@@ -118,23 +119,19 @@ void OnTick()
   const datetime now = TimeCurrent();
 
   TM_DD_Update(now);
-
   TM_ManageOpenPositions();
 
-  if(!NewBarGuard(PERIOD_M5, g_lastBar_M5)) return;
+  if(!NewBarGuard(PERIOD_M15, g_lastBar_M15)) return;  // FIXED: M15
 
-  // ADDED: Diagnostic logging for gate failures
   if(!PreTradeGate(now)) 
   {
     int spread = (int)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
-    double dd = DD_CurrentPercent();  // Function from trade_manager.mqh
+    double dd = DD_CurrentPercent();
     double atr_val = ATR(1);
     string reason = "";
     
     if(!TM_DD_GateOK())
-    {
       reason += "DD=" + DoubleToString(dd, 2) + "% ";
-    }
     
     reason += "Spread=" + IntegerToString(spread);
     if(atr_val != EMPTY_VALUE)
@@ -146,7 +143,6 @@ void OnTick()
 
   Signal sig;
   
-  // ADDED: Diagnostic logging for signal failures
   if(!BuildSignal(sig) || !sig.valid) 
   {
     Regime r = DetectRegime();
@@ -161,7 +157,6 @@ void OnTick()
     return;
   }
 
-  // FIXED: Get current market price for lot calculation
   MqlTick tick;
   if(!SymbolInfoTick(_Symbol, tick))
   {
@@ -169,10 +164,8 @@ void OnTick()
     return;
   }
 
-  // Use entry price for pending orders, current price for market orders
   double ref_price = (sig.entry > 0.0) ? sig.entry : ((sig.dir == DIR_LONG) ? tick.ask : tick.bid);
   
-  // FIXED: Validate signal SL before lot calculation
   if(sig.sl <= 0.0 || sig.sl == EMPTY_VALUE)
   {
     LogError("TRADE", "Invalid SL=" + DoubleToString(sig.sl, 5), 0);
@@ -204,10 +197,8 @@ void OnTick()
   }
 
   if(sent)
-    LogEvent("TRADE","sent ok; ticket=" + (string)ticket + " reason=" + sig.reason);
+    LogEvent("TRADE","✅ SENT: ticket=" + (string)ticket + " reason=" + sig.reason + " lot=" + DoubleToString(lot, 2));
   else
     LogError("TRADE","send failed", GetLastError());
 }
 //+------------------------------------------------------------------+
-
-
